@@ -66,4 +66,17 @@ public class DatabaseManager {
             System.out.println("[Error]: Failed to load history.");
         }
     }
+
+    public static void clearHistory() {
+        String sql = "DELETE FROM messages";
+        try (Connection conn = DriverManager.getConnection(DB_URL);
+             Statement stmt = conn.createStatement()) {
+
+            stmt.execute(sql);
+            System.out.println("[System]: Local chat history has been wiped.");
+
+        } catch (Exception e) {
+            System.out.println("[Error]: Failed to clear history: " + e.getMessage());
+        }
+    }
 }

@@ -37,16 +37,24 @@ public class Main {
             }
 
             // Chat Loop
-            System.out.println("\n[System]: Chat started! Type your messages below. Type '/exit' to quit.");
             while (true) {
                 String message = scanner.nextLine();
+
                 if (message.equalsIgnoreCase("/exit")) {
                     System.out.println("Exiting chat...");
                     System.exit(0);
+                } else if (message.equalsIgnoreCase("/clear")) {
+                    // --- NEW: Clear the database ---
+                    DatabaseManager.clearHistory();
+                    continue;
+                } else if (message.startsWith("/send ")) {
+                    String filePath = message.substring(6).trim();
+                    node.sendFile(filePath);
+                    DatabaseManager.saveMessage("You", "[Sent a file: " + filePath + "]");
+                    continue;
                 }
-                node.sendMessage(message);
 
-                // Save your outgoing message to SQLite
+                node.sendMessage(message);
                 DatabaseManager.saveMessage("You", message);
             }
 

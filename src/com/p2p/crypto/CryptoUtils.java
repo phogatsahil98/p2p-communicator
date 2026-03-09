@@ -57,4 +57,19 @@ public class CryptoUtils {
         KeyFactory kf = KeyFactory.getInstance("RSA");
         return kf.generatePublic(spec);
     }
+
+    // --- NEW METHODS FOR SECURE FILE TRANSFER ---
+    public static String encryptFile(byte[] fileBytes, SecretKey secretKey) throws Exception {
+        Cipher cipher = Cipher.getInstance("AES");
+        cipher.init(Cipher.ENCRYPT_MODE, secretKey);
+        // Encrypts the raw bytes, then converts to a network-safe Base64 string
+        return Base64.getEncoder().encodeToString(cipher.doFinal(fileBytes));
+    }
+
+    public static byte[] decryptFile(String encryptedFileStr, SecretKey secretKey) throws Exception {
+        Cipher cipher = Cipher.getInstance("AES");
+        cipher.init(Cipher.DECRYPT_MODE, secretKey);
+        // Decodes the Base64 string back to encrypted bytes, then decrypts to original file bytes
+        return cipher.doFinal(Base64.getDecoder().decode(encryptedFileStr));
+    }
 }
