@@ -1,16 +1,19 @@
 package com.p2p.network;
 
 import com.p2p.crypto.CryptoUtils;
+import com.p2p.ui.ChatInterface;
+import com.p2p.db.DatabaseManager;
 import javax.crypto.SecretKey;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.Socket;
+import java.io.File;
+import java.io.FileOutputStream;
 
 public class ConnectionThread extends Thread {
     private Socket socket;
     private SecretKey secretKey;
 
-    // Constructor to pass in the connected socket and the shared AES key
     public ConnectionThread(Socket socket, SecretKey secretKey) {
         this.socket = socket;
         this.secretKey = secretKey;
@@ -22,17 +25,41 @@ public class ConnectionThread extends Thread {
             BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
             String encryptedMessage;
 
-            // Continuously listen for incoming lines of text
             while ((encryptedMessage = in.readLine()) != null) {
-                // Decrypt the message using our CryptoUtils class
                 String decryptedMessage = CryptoUtils.decryptMessage(encryptedMessage, secretKey);
 
-                // Print the message and reset the typing prompt for the user
-                System.out.println("\n[Peer]: " + decryptedMessage);
-                System.out.print("[You]: ");
+                // Check if the message is actually a file payload
+                if (decryptedMessage.startsWith("[FILE]:")) {
+                    String[] parts = decryptedMessage.split(":", 3);
+                    String fileName = parts[1];
+                    String encryptedFileData = parts[2];
+
+                    ChatInterface.showSystem("Receiving secure file: " + fileName + "...");
+
+                    // Decrypt the Base64 file data back into raw bytes
+                    byte[] fileBytes = CryptoUtils.decryptFile(encryptedFileData, secretKey);
+
+                    // Create a downloads directory if it doesn't exist
+                    File downloadDir = new File("downloads");
+                    if (!downloadDir.exists()) downloadDir.mkdir();
+
+                    // Save the file
+                    File outputFile = new File(downloadDir, "secure_" + fileName);
+                    try (FileOutputStream fos = new FileOutputStream(outputFile)) {
+                        fos.write(fileBytes);
+                    }
+
+                    ChatInterface.showSystem("File saved securely to: " + outputFile.getAbsolutePath());
+                    DatabaseManager.saveMessage("Peer", "[Sent a file: " + fileName + "]");
+
+                } else {
+                    // Standard text message
+                    ChatInterface.showPeer(decryptedMessage);
+                    DatabaseManager.saveMessage("Peer", decryptedMessage);
+                }
             }
         } catch (Exception e) {
-            System.out.println("\n[System]: Peer disconnected or a network error occurred.");
+            ChatInterface.showError("Connection lost.");
         }
     }
 }

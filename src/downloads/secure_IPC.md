@@ -1,0 +1,1 @@
+**Date : 5 Feb 2026**Minimisation of water uses :* Causes of Water Scarcity :Climate change.Due to natural calamities like drought , floods.Increment Human Consumption.Overuse of water leads to wastage.High demand of fresh water Globally.Overuse of Aquifers and slow recharge of fresh water channel.* Points to save WaterRain Water Harvesting.

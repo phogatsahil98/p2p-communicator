@@ -3,42 +3,73 @@ package com.p2p.crypto;
 import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
+import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.PrivateKey;
 import java.security.PublicKey;
+import java.security.spec.X509EncodedKeySpec;
 import java.util.Base64;
 
 public class CryptoUtils {
 
-    // Generates the 2048-bit RSA Key Pair (Public & Private) for the initial handshake
     public static KeyPair generateRSAKeyPair() throws Exception {
         KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
         keyGen.initialize(2048);
         return keyGen.generateKeyPair();
     }
 
-    // Generates the 256-bit AES Key for the actual chat messages
     public static SecretKey generateAESKey() throws Exception {
         KeyGenerator keyGen = KeyGenerator.getInstance("AES");
         keyGen.init(256);
         return keyGen.generateKey();
     }
 
-    // Encrypts a string message using the AES Secret Key
     public static String encryptMessage(String message, SecretKey secretKey) throws Exception {
         Cipher cipher = Cipher.getInstance("AES");
         cipher.init(Cipher.ENCRYPT_MODE, secretKey);
-        byte[] encryptedBytes = cipher.doFinal(message.getBytes());
-        return Base64.getEncoder().encodeToString(encryptedBytes);
+        return Base64.getEncoder().encodeToString(cipher.doFinal(message.getBytes()));
     }
 
-    // Decrypts a string message using the AES Secret Key
     public static String decryptMessage(String encryptedMessage, SecretKey secretKey) throws Exception {
         Cipher cipher = Cipher.getInstance("AES");
         cipher.init(Cipher.DECRYPT_MODE, secretKey);
-        byte[] decodedBytes = Base64.getDecoder().decode(encryptedMessage);
-        byte[] decryptedBytes = cipher.doFinal(decodedBytes);
-        return new String(decryptedBytes);
+        return new String(cipher.doFinal(Base64.getDecoder().decode(encryptedMessage)));
+    }
+
+    // --- NEW RSA METHODS FOR AUTOMATED HANDSHAKE ---
+
+    public static String encryptRSA(byte[] data, PublicKey publicKey) throws Exception {
+        Cipher cipher = Cipher.getInstance("RSA");
+        cipher.init(Cipher.ENCRYPT_MODE, publicKey);
+        return Base64.getEncoder().encodeToString(cipher.doFinal(data));
+    }
+
+    public static byte[] decryptRSA(String encryptedData, PrivateKey privateKey) throws Exception {
+        Cipher cipher = Cipher.getInstance("RSA");
+        cipher.init(Cipher.DECRYPT_MODE, privateKey);
+        return cipher.doFinal(Base64.getDecoder().decode(encryptedData));
+    }
+
+    public static PublicKey getPublicKeyFromString(String keyStr) throws Exception {
+        byte[] keyBytes = Base64.getDecoder().decode(keyStr);
+        X509EncodedKeySpec spec = new X509EncodedKeySpec(keyBytes);
+        KeyFactory kf = KeyFactory.getInstance("RSA");
+        return kf.generatePublic(spec);
+    }
+
+    // --- NEW METHODS FOR SECURE FILE TRANSFER ---
+    public static String encryptFile(byte[] fileBytes, SecretKey secretKey) throws Exception {
+        Cipher cipher = Cipher.getInstance("AES");
+        cipher.init(Cipher.ENCRYPT_MODE, secretKey);
+        // Encrypts the raw bytes, then converts to a network-safe Base64 string
+        return Base64.getEncoder().encodeToString(cipher.doFinal(fileBytes));
+    }
+
+    public static byte[] decryptFile(String encryptedFileStr, SecretKey secretKey) throws Exception {
+        Cipher cipher = Cipher.getInstance("AES");
+        cipher.init(Cipher.DECRYPT_MODE, secretKey);
+        // Decodes the Base64 string back to encrypted bytes, then decrypts to original file bytes
+        return cipher.doFinal(Base64.getDecoder().decode(encryptedFileStr));
     }
 }
