@@ -1,119 +1,121 @@
 package com.p2p.network;
 
-// Add these to your imports at the top:
-import java.io.File;
-import java.nio.file.Files;
-
 import com.p2p.crypto.CryptoUtils;
 import com.p2p.ui.ChatInterface;
 import javax.crypto.SecretKey;
-import javax.crypto.spec.SecretKeySpec;
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.io.PrintWriter;
-import java.net.ServerSocket;
-import java.net.Socket;
+import java.io.*;
+import java.net.*;
+import java.nio.file.Files;
 import java.security.KeyPair;
-import java.security.PublicKey;
-import java.util.Base64;
-
 
 public class PeerNode {
     private Socket socket;
     private PrintWriter out;
     private BufferedReader in;
     private SecretKey secretKey;
+    private KeyPair myKeyPair;
+    private boolean isHost = false;
+    private boolean isGroupChat = false;
+
+    public boolean isHost() { return isHost; }
+    public boolean isGroupChat() { return isGroupChat; }
+    public SecretKey getSecretKey() { return secretKey; }
+    public void setSecretKey(SecretKey key) { this.secretKey = key; }
+    public KeyPair getMyKeyPair() { return myKeyPair; }
+    public PrintWriter getOut() { return out; }
 
     public void startHost(int port) throws Exception {
         ServerSocket serverSocket = new ServerSocket(port);
-        ChatInterface.showSystem("Listening for connections on port " + port + "...");
+        ChatInterface.printToScreen("[System]: Waiting for a peer on port " + port + "...");
         this.socket = serverSocket.accept();
-        ChatInterface.showSystem("Target peer connected! Initiating secure RSA handshake...");
-
-        this.out = new PrintWriter(socket.getOutputStream(), true);
-        this.in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-
-        // 1. Host generates the RSA Key Pair
-        KeyPair rsaPair = CryptoUtils.generateRSAKeyPair();
-
-        // 2. Host sends Public Key to Client
-        String pubKeyString = Base64.getEncoder().encodeToString(rsaPair.getPublic().getEncoded());
-        out.println(pubKeyString);
-
-        // 3. Host waits to receive the encrypted AES key from Client
-        String encryptedAesKeyStr = in.readLine();
-
-        // 4. Host decrypts the AES key using their Private Key
-        byte[] decryptedAesBytes = CryptoUtils.decryptRSA(encryptedAesKeyStr, rsaPair.getPrivate());
-        this.secretKey = new SecretKeySpec(decryptedAesBytes, 0, decryptedAesBytes.length, "AES");
-
-        ChatInterface.showSystem("Handshake complete. AES Session Key secured.");
-        startChatThread();
+        ChatInterface.printToScreen("[System]: Peer connected!");
+        setupStreams();
+        performLocalHandshake(true);
+        new ConnectionThread(socket, this).start();
     }
 
-    public void connectToPeer(String ipAddress, int port) throws Exception {
-        ChatInterface.showSystem("Attempting connection to " + ipAddress + ":" + port + "...");
-        this.socket = new Socket(ipAddress, port);
-        ChatInterface.showSystem("Connection established! Awaiting host's public key...");
-
-        this.out = new PrintWriter(socket.getOutputStream(), true);
-        this.in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-
-        // 1. Client receives Public Key from Host
-        String pubKeyString = in.readLine();
-        PublicKey hostPublicKey = CryptoUtils.getPublicKeyFromString(pubKeyString);
-
-        // 2. Client generates the AES Session Key
-        this.secretKey = CryptoUtils.generateAESKey();
-
-        // 3. Client encrypts the AES Key with Host's Public Key and sends it
-        String encryptedAesKey = CryptoUtils.encryptRSA(this.secretKey.getEncoded(), hostPublicKey);
-        out.println(encryptedAesKey);
-
-        ChatInterface.showSystem("AES Session Key generated and securely transmitted.");
-        startChatThread();
+    public void connectToPeer(String ip, int port) throws Exception {
+        ChatInterface.printToScreen("[System]: Connecting to " + ip + ":" + port + "...");
+        this.socket = new Socket(ip, port);
+        ChatInterface.printToScreen("[System]: Connected!");
+        setupStreams();
+        performLocalHandshake(false);
+        new ConnectionThread(socket, this).start();
     }
 
-    private void startChatThread() {
-        ConnectionThread listener = new ConnectionThread(socket, secretKey);
-        listener.start();
-    }
+    public void connectToRelay(String relayIp, int port, boolean isHost, boolean isGroup) throws Exception {
+        ChatInterface.printToScreen("[System]: Connecting to AWS Relay at " + relayIp + ":" + port + "...");
+        this.socket = new Socket(relayIp, port);
+        setupStreams();
+        this.isHost = isHost;
+        this.isGroupChat = isGroup;
 
-    public void sendMessage(String plainMessage) {
-        try {
-            String encryptedMessage = CryptoUtils.encryptMessage(plainMessage, secretKey);
-            out.println(encryptedMessage);
-        } catch (Exception e) {
-            ChatInterface.showError("Failed to encrypt or send message.");
+        if (isGroup) {
+            if (isHost) {
+                this.secretKey = CryptoUtils.generateAESKey();
+                ChatInterface.printToScreen("[System]: Group Admin initialized. Waiting for peers...");
+            } else {
+                this.myKeyPair = CryptoUtils.generateRSAKeyPair();
+                out.println("[KEY_REQUEST]:" + CryptoUtils.encodePublicKey(myKeyPair.getPublic()));
+                ChatInterface.printToScreen("[System]: Sent secure entry request. Waiting for Room Admin...");
+            }
+            new ConnectionThread(socket, this).start();
+        } else {
+            ChatInterface.printToScreen("[System]: Connected to Relay. Waiting for 1-to-1 peer...");
+            performLocalHandshake(isHost);
+            new ConnectionThread(socket, this).start();
         }
     }
 
-    // Paste this method inside the PeerNode class:
-    public void sendFile(String filePath) {
+    private void setupStreams() throws IOException {
+        out = new PrintWriter(socket.getOutputStream(), true);
+        in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+    }
+
+    private void performLocalHandshake(boolean isHost) throws Exception {
+        if (isHost) {
+            KeyPair keyPair = CryptoUtils.generateRSAKeyPair();
+            out.println(CryptoUtils.encodePublicKey(keyPair.getPublic()));
+            String encryptedAesKey = in.readLine();
+            secretKey = CryptoUtils.decryptAESKey(encryptedAesKey, keyPair.getPrivate());
+        } else {
+            String publicKeyStr = in.readLine();
+            secretKey = CryptoUtils.generateAESKey();
+            out.println(CryptoUtils.encryptAESKey(secretKey, CryptoUtils.decodePublicKey(publicKeyStr)));
+        }
+        ChatInterface.printToScreen("[System]: RSA-AES Handshake complete. Connection secure.");
+    }
+
+    public void sendMessage(String message, String username) {
         try {
+            if (secretKey != null) {
+                String payload = "[MSG]:" + username + ":" + message;
+                out.println(CryptoUtils.encryptMessage(payload, secretKey));
+            } else {
+                ChatInterface.printToScreen("[System]: Cannot send, secure connection not established.");
+            }
+        } catch (Exception e) {
+            ChatInterface.printToScreen("[Error]: Failed to send: " + e.getMessage());
+        }
+    }
+
+    public void sendFile(String filePath, String username) {
+        try {
+            if (secretKey == null) return;
             File file = new File(filePath);
             if (!file.exists()) {
-                ChatInterface.showError("File not found: " + filePath);
+                ChatInterface.printToScreen("[Error]: File not found.");
                 return;
             }
-
-            ChatInterface.showSystem("Reading and encrypting file...");
+            ChatInterface.printToScreen("[System]: Encrypting and sending file...");
             byte[] fileBytes = Files.readAllBytes(file.toPath());
+            String encryptedData = CryptoUtils.encryptFile(fileBytes, secretKey);
 
-            // 1. Encrypt the raw file bytes into a Base64 string
-            String encryptedFileData = CryptoUtils.encryptFile(fileBytes, secretKey);
-
-            // 2. Create a payload containing the file marker, filename, and encrypted data
-            String payload = "[FILE]:" + file.getName() + ":" + encryptedFileData;
-
-            // 3. Encrypt the entire payload using the standard message encryption
-            String finalEncryptedMessage = CryptoUtils.encryptMessage(payload, secretKey);
-            out.println(finalEncryptedMessage);
-
-            ChatInterface.showSystem("File sent successfully: " + file.getName());
+            String payload = "[FILE]:" + username + ":" + file.getName() + ":" + encryptedData;
+            out.println(CryptoUtils.encryptMessage(payload, secretKey));
+            ChatInterface.printToScreen("[System]: File sent: " + file.getName());
         } catch (Exception e) {
-            ChatInterface.showError("Failed to send file: " + e.getMessage());
+            ChatInterface.printToScreen("[Error]: File send failed: " + e.getMessage());
         }
     }
-
 }
