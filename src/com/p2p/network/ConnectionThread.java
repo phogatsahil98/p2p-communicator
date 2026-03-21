@@ -1,65 +1,67 @@
 package com.p2p.network;
 
 import com.p2p.crypto.CryptoUtils;
-import com.p2p.ui.ChatInterface;
 import com.p2p.db.DatabaseManager;
+import com.p2p.ui.ChatInterface;
 import javax.crypto.SecretKey;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.Socket;
-import java.io.File;
-import java.io.FileOutputStream;
+import java.security.PublicKey;
 
 public class ConnectionThread extends Thread {
     private Socket socket;
-    private SecretKey secretKey;
+    private PeerNode node;
 
-    public ConnectionThread(Socket socket, SecretKey secretKey) {
+    public ConnectionThread(Socket socket, PeerNode node) {
         this.socket = socket;
-        this.secretKey = secretKey;
+        this.node = node;
     }
 
-    @Override
     public void run() {
         try {
             BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-            String encryptedMessage;
+            String incoming;
+            while ((incoming = in.readLine()) != null) {
 
-            while ((encryptedMessage = in.readLine()) != null) {
-                String decryptedMessage = CryptoUtils.decryptMessage(encryptedMessage, secretKey);
+                if (node.isGroupChat() && incoming.startsWith("[KEY_REQUEST]:") && node.isHost()) {
+                    String pubKeyStr = incoming.substring(14);
+                    PublicKey peerKey = CryptoUtils.decodePublicKey(pubKeyStr);
+                    String encKey = CryptoUtils.encryptAESKey(node.getSecretKey(), peerKey);
+                    node.getOut().println("[KEY_RESPONSE]:" + encKey);
+                    ChatInterface.printToScreen("[System]: A new peer joined the group securely.");
+                }
 
-                // Check if the message is actually a file payload
-                if (decryptedMessage.startsWith("[FILE]:")) {
-                    String[] parts = decryptedMessage.split(":", 3);
-                    String fileName = parts[1];
-                    String encryptedFileData = parts[2];
+                else if (node.isGroupChat() && incoming.startsWith("[KEY_RESPONSE]:") && !node.isHost() && node.getSecretKey() == null) {
+                    try {
+                        String encKey = incoming.substring(15);
+                        SecretKey key = CryptoUtils.decryptAESKey(encKey, node.getMyKeyPair().getPrivate());
+                        node.setSecretKey(key);
+                        ChatInterface.printToScreen("[System]: Secure group connection established!");
+                    } catch (Exception e) { }
+                }
 
-                    ChatInterface.showSystem("Receiving secure file: " + fileName + "...");
+                else if (node.getSecretKey() != null && !incoming.startsWith("[KEY_")) {
+                    try {
+                        String decrypted = CryptoUtils.decryptMessage(incoming, node.getSecretKey());
 
-                    // Decrypt the Base64 file data back into raw bytes
-                    byte[] fileBytes = CryptoUtils.decryptFile(encryptedFileData, secretKey);
-
-                    // Create a downloads directory if it doesn't exist
-                    File downloadDir = new File("downloads");
-                    if (!downloadDir.exists()) downloadDir.mkdir();
-
-                    // Save the file
-                    File outputFile = new File(downloadDir, "secure_" + fileName);
-                    try (FileOutputStream fos = new FileOutputStream(outputFile)) {
-                        fos.write(fileBytes);
-                    }
-
-                    ChatInterface.showSystem("File saved securely to: " + outputFile.getAbsolutePath());
-                    DatabaseManager.saveMessage("Peer", "[Sent a file: " + fileName + "]");
-
-                } else {
-                    // Standard text message
-                    ChatInterface.showPeer(decryptedMessage);
-                    DatabaseManager.saveMessage("Peer", decryptedMessage);
+                        if (decrypted.startsWith("[FILE]:")) {
+                            // Unpack: [FILE] : Username : Filename : EncryptedData
+                            String[] parts = decrypted.split(":", 4);
+                            ChatInterface.printToScreen("\uD83D\uDCCE " + parts[1] + " sent a secure file: " + parts[2]);
+                            DatabaseManager.saveMessage(parts[1], "[Received file: " + parts[2] + "]");
+                        }
+                        else if (decrypted.startsWith("[MSG]:")) {
+                            // Unpack: [MSG] : Username : Message
+                            String[] parts = decrypted.split(":", 3);
+                            ChatInterface.printToScreen(parts[1] + ": " + parts[2]);
+                            DatabaseManager.saveMessage(parts[1], parts[2]);
+                        }
+                    } catch (Exception e) { }
                 }
             }
         } catch (Exception e) {
-            ChatInterface.showError("Connection lost.");
+            ChatInterface.printToScreen("[System]: Disconnected.");
         }
     }
 }

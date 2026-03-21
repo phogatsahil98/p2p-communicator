@@ -18,19 +18,17 @@ public class DatabaseManager {
         }
     }
 
-    public static void initializeDatabase() {
-        try (Connection conn = DriverManager.getConnection(DB_URL);
-             Statement stmt = conn.createStatement()) {
-
-            String sql = "CREATE TABLE IF NOT EXISTS messages (" +
-                    "id INTEGER PRIMARY KEY AUTOINCREMENT," +
-                    "sender TEXT NOT NULL," +
-                    "message TEXT NOT NULL," +
-                    "timestamp DATETIME DEFAULT CURRENT_TIMESTAMP" +
-                    ")";
+    public static void initialize() {
+        String sql = "CREATE TABLE IF NOT EXISTS messages ("
+                + "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                + "sender TEXT NOT NULL,"
+                + "message TEXT NOT NULL,"
+                + "timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)";
+        try (java.sql.Connection conn = java.sql.DriverManager.getConnection("jdbc:sqlite:chat_history.db");
+             java.sql.Statement stmt = conn.createStatement()) {
             stmt.execute(sql);
         } catch (Exception e) {
-            System.out.println("[Error]: Database initialization failed: " + e.getMessage());
+            System.out.println("Database init error: " + e.getMessage());
         }
     }
 
