@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="YOUR_BANNER_IMAGE_URL_HERE" alt="ChitChat Banner" width="100%" />
+  <img src="BannerImage.png" alt="ChitChat Banner" width="100%" />
 </p>
 
 <h1 align="center">🔒 ChitChat</h1>
